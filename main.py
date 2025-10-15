@@ -1,15 +1,18 @@
 #-*- encoding: utf8 -*-
+
 from flask import Flask, render_template, request, abort, send_file
-from checktools import check_text, is_py_extension, pep8parser, template_results
+from checktools import check_text, is_py_extension, pep8parser
 from datetime import datetime
 from generate import gen_text_file, gen_result_text
 from tools import generate_short_name
+from models import Share, get_session
 
 
-from pymongo import MongoClient
-from bson.objectid import ObjectId
+app = Flask(__name__,
+            static_folder='static',
+            static_url_path='/pep8/static',
+            template_folder='templates',)
 
-app = Flask(__name__)
 try:
     app.config.from_object('production_settings')
 except ImportError:
@@ -27,7 +30,7 @@ if app.config['LOG']:
 
 def get_datetime():
     """return datetime as string"""
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
+    return datetime.now().strftime(r"%Y%m%d_%H%M%S")
 
 
 @app.route("/")
@@ -70,10 +73,20 @@ def check_result():
             if not code_file:
                 context['error'] = 'Forget file'
                 return render_template("check_result.html", **context)
+
             if not is_py_extension(code_file.filename):
-                context['error'] = 'Please upload python file'
+                context['error'] = 'Please upload Python file'
                 return render_template("check_result.html", **context)
-            context['code_text'] = code_file.read()
+            
+            try:
+                file_content = code_file.read()
+                if isinstance(file_content, bytes):
+                    file_content = file_content.decode()
+            except Exception as e:
+                print(e.args)
+                raise
+            else:
+                context['code_text'] = file_content
         else:
             try:
                 context['code_text'] = request.form["code"]
@@ -84,8 +97,7 @@ def check_result():
             return render_template("check_result.html", **context)
         else:
             context['result'] = check_text(
-                context['code_text'],
-                app.config['TEMP_PATH'],
+                text=context['code_text'],
                 logger=app.logger if app.config['LOG'] else None
             )
     return render_template("check_result.html", **context)
@@ -121,80 +133,47 @@ def save_result():
 
 
 #TODO
-#It will be remove later after 30-60 days
-#now it only for old links
-@app.route('/share', methods=['GET', 'POST'])
-@app.route('/share/<object_id>')
-def old_share_result(object_id=None):
-    connection = MongoClient()
-    db = connection[app.config["MONGO_DB"]]
-    collection = db.share
-    context = {
-        'result': '',
-        'code_text': '',
-        'error': ''
-    }
-    if object_id:
-        db_result = collection.find_one({'_id': ObjectId(object_id)})
-        if db_result:
-            context['code_text'] = db_result["code"]
-            context['result'] = pep8parser(db_result['result'].split(":::"),
-                                           template_results)
-        else:
-            context['error'] = "Sorry, not found"
-        return render_template("check_result.html", **context)
-    if request.method == "POST":
-        code_text = request.form["code"]
-        code_result = request.form["results"]
-        obj_id = collection.insert({'code': code_text,
-                                    'result': code_result,
-                                    'date': datetime.now()})
-        return str(obj_id)
-    else:
-        return ''
-
-
+# Need to be removed later after 30-60 days
+# now it only for old links
 @app.route('/s', methods=['GET', 'POST'])
 @app.route('/s/<key>')
 def share_result(key=None):
-    connection = MongoClient()
-    db = connection[app.config["MONGO_DB"]]
-    collection = db.share
-    context = {
-        'result': '',
-        'code_text': '',
-        'error': ''
-    }
+    session = get_session()
+    context = {'result': '', 'code_text': '', 'error': ''}
+
     if key:
-        db_result = collection.find_one({'key': key})
+        db_result = session.query(Share).filter_by(key=key).first()
         if db_result:
-            context['code_text'] = db_result["code"]
-            context['result'] = pep8parser(db_result['result'].split(":::"),
-                                           template_results)
+            context['code_text'] = db_result.code
+            context['result'] = pep8parser(db_result.result.split(":::"), saved=True)
         else:
             context['error'] = "Sorry, not found"
+        session.close()
         return render_template("check_result.html", **context)
+
     if request.method == "POST":
         code_text = request.form["code"]
         code_result = request.form["results"]
         key = generate_short_name()
-        while collection.find_one({'key': key}):
+
+        # Ensure unique key
+        while session.query(Share).filter_by(key=key).first():
             key = generate_short_name()
-        collection.insert({
-            'key': key,
-            'code': code_text,
-            'result': code_result,
-            'date': datetime.now()
-        })
+
+        new_share = Share(key=key, code=code_text, result=code_result)
+        session.add(new_share)
+        session.commit()
+        session.close()
         return str(key)
-    else:
-        return ''
 
+    session.close()
+    return ''
 
+    
 #For development
 if __name__ == '__main__':
     try:
         app.config.from_object('development_settings')
     except ImportError:
-        pass
+        raise
     app.run(debug=True)
