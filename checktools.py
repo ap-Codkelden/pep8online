@@ -1,71 +1,82 @@
 #-*- encoding: utf8 -*-
-import pep8
-import StringIO
-import sys
-import os
-import tempfile
+
+import pycodestyle
 import re
+import sys
+import tempfile
+
+from io import StringIO
+from pathlib import Path
+
+def parse_error_text(errdesc, saved=False):
+    ERR_REGEX = re.compile(r"^(?P<errtype>[A-Z]+?)(?P<code>[0-9]+?)\s(?P<text>.+)$", re.I)
+    ERR_CODE_RE = re.compile("^(?P<type>[A-Z]+?)(?P<code>[0-9]+?)$")
+    if not saved:
+        line, col, message = errdesc
+        m = ERR_REGEX.match(message)
+        if not m:
+            raise ValueError("Too few arguments")
+        else:
+            errtype, code, text = m.group('errtype'), m.group('code'), m.group('text')
+    else:
+        err_code, line, col, text = errdesc
+        m = ERR_CODE_RE.match(err_code)
+        errtype, code = m.group('type'), m.group('code')
+    return {'type': errtype, 'code': code, 'line': int(line), 'place': int(col), 'text': text}
 
 
-def template_pep8(temp):
-    return {'type': temp[3][1],
-            'code': temp[3][2:5],
-            'line': temp[1],
-            'place': temp[2],
-            'text': temp[3][6:]}
-
-
-def template_results(temp):
-    return {'type': temp[0][0],
-            'code': temp[0][1:],
-            'line': temp[1],
-            'place': temp[2],
-            'text': temp[3]}
-
-
-def pep8parser(strings, temp_dict_f=template_pep8):
+def pep8parser(strings, saved=False):
     """
     Convert strings from pep8 results to list of dictionaries
+    Parameter saved determines the source of the input:
+
+        True : parse previously saved results
+        False: parse newly checked code
     """
     result_list = []
     for s in strings:
-        temp = re.findall(r"(.+?):(.+?):(.+?):(.*)", s)
-        if temp and len(temp[0]) >= 4:
-            result_list.append(temp_dict_f(temp[0]))
+        temp = list(x.strip() for x in s.rsplit(":", 3))
+        print(temp)
+        if not saved:
+            temp = temp[-3:]
+        result_list.append(parse_error_text(temp, saved=saved))
     return result_list
 
 
-def check_text(text, temp_dir, logger=None):
+def check_text(text, logger=None):
     """
-    check text for pep8 requirements
+    Check text for PEP8/pycodestyle requirements
     """
-    #prepare code
-    code_file, code_filename = tempfile.mkstemp(dir=temp_dir)
-    with open(code_filename, 'w') as code_file:
-        code_file.write(text.encode('utf8'))
-        #initialize pep8 checker
-    pep8style = pep8.StyleGuide(parse_argv=False, config_file=False)
-    options = pep8style.options
-    #redirect print and get result
-    temp_outfile = StringIO.StringIO()
-    sys.stdout = temp_outfile
-    checker = pep8.Checker(code_filename, options=options)
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.py') as code_file:
+        code_filename = code_file.name
+        code_file.write(text)
+
+    buffer = StringIO()
+    saved_stdout = sys.stdout
+    sys.stdout = buffer
+
+    sg = pycodestyle.StyleGuide(quiet=False)
+    checker = pycodestyle.Checker(code_filename, options=sg.options)
     checker.check_all()
-    sys.stdout = sys.__stdout__
-    result = temp_outfile.buflist[:]
-    #clear all
-    temp_outfile.close()
-    code_file.close()
-    os.remove(code_filename)
-    fullResultList = pep8parser(result)
-    fullResultList.sort(key=lambda x: (int(x['line']), int(x["place"])))
+
+    sys.stdout = saved_stdout
+    result = buffer.getvalue()
+
+    buffer.close()
+    Path(code_filename).unlink(missing_ok=True)
+
     if logger:
         logger.debug(result)
+
+    fullResultList = pep8parser(result.splitlines())
+    fullResultList.sort(key=lambda x: (int(x['line']), int(x['place'])))
+
     return fullResultList
 
 
 def is_py_extension(filename):
-    return ('.' in filename) and (filename.split('.')[-1] == 'py')
+    filename = Path(filename)
+    return filename.suffixes[-1] == '.py'
 
 if __name__ == '__main__':
     pass
