@@ -95,7 +95,7 @@
                         <input type="hidden" id="code" name="code" value="">
                     </label>
                     <pre id="editor" style="padding: 0px;">{{ code_text }}</pre>
-                    <script src="/static/ace/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
+                    <script src="{{ url_for('static', filename='ace/src-noconflict/ace.js') }}" type="text/javascript" charset="utf-8"></script>
                     <script>
                         var editor = ace.edit("editor");
                         var textarea = document.getElementById('code');
@@ -152,24 +152,25 @@
                         }
 
                         function shareResult(url) {
+                            var baseUrl = window.location.protocol + "//" + window.location.host;
+
                             var code = $("#orig_code").val();
                             var results = $("#orig_results").val();
-                            var response = $.ajax({
-                                url:url,
-                                type:"POST",
-                                data:{
-                                    code:code,
-                                    results:results
+                            $.ajax({
+                                url: baseUrl + "/s",
+                                type: "POST",
+                                data: {
+                                    code: code,
+                                    results: results
                                 },
-                                datatype:"text"
+                                dataType: "text"
                             }).done(function (oid) {
-                                        var link = "http://pep8online.com/s/" + oid;
-                                        var $share_link = $("#share_link");
-                                        $share_link.html("http://pep8online.com/s/" + oid);
-                                        $share_link.attr("href", link);
-                                        $("#hidden_url_div").show(200);
-                                    });
-
+                                var link = baseUrl + "/s/" + oid;
+                                var $share_link = $("#share_link");
+                                $share_link.html(link);
+                                $share_link.attr("href", link);
+                                $("#hidden_url_div").show(200);
+                            });
                         }
 
                     </script>

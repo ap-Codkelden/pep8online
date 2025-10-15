@@ -8,7 +8,7 @@
                 <input type="hidden" id="code" name="code" value="">
             </label>
             <pre id="editor" style="padding: 0px;"></pre>
-            <script src="/static/ace/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
+            <script src="{{ url_for('static', filename='ace/src-noconflict/ace.js') }}" type="text/javascript" charset="utf-8"></script>
             <script>
                 var editor = ace.edit("editor");
                 var textarea = document.getElementById('code');

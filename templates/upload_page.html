@@ -24,7 +24,7 @@
                style="visibility: hidden; height: 1px; margin: 0px;">
         <script>
             function submitFileForm() {
-                var MAX_SIZE = 10 * 1024 * 1024;
+                var MAX_SIZE = 1 * 1024 * 1024;
                 var errorField = document.getElementById('error');
                 var fileUpload = document.getElementById('code_file');
                 if (!fileUpload.files.length) {
@@ -38,7 +38,7 @@
                         return false;
                     }
                     if (file.size > MAX_SIZE) {
-                        errorField.innerHTML = "Max file size - 10Mb";
+                        errorField.innerHTML = "Max file size - 1 Mb";
                         return false;
                     }
                     else if (!file.size) {
